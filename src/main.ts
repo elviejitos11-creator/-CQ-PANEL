@@ -244,3 +244,253 @@ render()
 
 
 
+
+// ===== CQ PANEL: NOTAS + CERRAR SESION =====
+;(() => {
+  type CQNote = {
+    id: number
+    title: string
+    text: string
+    category: string
+    favorite: boolean
+  }
+
+  const user = JSON.parse(localStorage.getItem('cq-user') || 'null')
+  const notesKey = user?.username
+    ? `cq-notes-${user.username}`
+    : 'cq-notes'
+
+  let notes: CQNote[] = JSON.parse(localStorage.getItem(notesKey) || '[]')
+
+  const saveNotes = () => {
+    localStorage.setItem(notesKey, JSON.stringify(notes))
+  }
+
+  const style = document.createElement('style')
+  style.textContent = `
+    .cq-tools{
+      position:fixed;right:18px;top:18px;z-index:9000;
+      display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end
+    }
+    .cq-tool-btn{
+      border:1px solid #354067;border-radius:12px;padding:10px 14px;
+      background:#10162e;color:white;font-weight:700;cursor:pointer
+    }
+    .cq-tool-main{
+      background:linear-gradient(90deg,#168cff,#7c35ff,#e900d7);
+      border:0
+    }
+    .cq-notes-overlay{
+      display:none;position:fixed;inset:0;z-index:9500;
+      background:rgba(0,0,0,.78);padding:20px;overflow:auto
+    }
+    .cq-notes-box{
+      max-width:760px;margin:30px auto;background:#0b1026;
+      border:1px solid #354067;border-radius:22px;padding:22px;color:white
+    }
+    .cq-notes-head{
+      display:flex;justify-content:space-between;align-items:center;gap:12px
+    }
+    .cq-note-input,.cq-note-textarea,.cq-note-select{
+      width:100%;box-sizing:border-box;margin-top:10px;padding:13px;
+      border-radius:12px;border:1px solid #354067;
+      background:#071025;color:white
+    }
+    .cq-note-textarea{min-height:130px;resize:vertical}
+    .cq-note-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+    .cq-note-card{
+      margin-top:14px;padding:16px;border:1px solid #354067;
+      border-radius:16px;background:#0d1430
+    }
+    .cq-note-card h3{margin:0 0 6px}
+    .cq-note-card p{white-space:pre-wrap;word-break:break-word}
+    .cq-note-meta{opacity:.65;font-size:13px;margin-bottom:8px}
+  `
+  document.head.appendChild(style)
+
+  const tools = document.createElement('div')
+  tools.className = 'cq-tools'
+
+  const notesBtn = document.createElement('button')
+  notesBtn.className = 'cq-tool-btn cq-tool-main'
+  notesBtn.textContent = '📝 Notas'
+
+  const logoutBtn = document.createElement('button')
+  logoutBtn.className = 'cq-tool-btn'
+  logoutBtn.textContent = '🚪 Cerrar sesión'
+
+  tools.append(notesBtn, logoutBtn)
+  document.body.appendChild(tools)
+
+  const overlay = document.createElement('div')
+  overlay.className = 'cq-notes-overlay'
+  overlay.innerHTML = `
+    <div class="cq-notes-box">
+      <div class="cq-notes-head">
+        <h2>📝 Mis notas</h2>
+        <button id="cqCloseNotes" class="cq-tool-btn">✕</button>
+      </div>
+
+      <input id="cqNoteTitle" class="cq-note-input" placeholder="Título">
+      <select id="cqNoteCategory" class="cq-note-select">
+        <option value="General">General</option>
+        <option value="Direcciones">Direcciones</option>
+        <option value="Telefonía">Telefonía</option>
+        <option value="Proxies">Proxies</option>
+        <option value="Trabajo">Trabajo</option>
+        <option value="Personal">Personal</option>
+      </select>
+      <textarea id="cqNoteText" class="cq-note-textarea"
+        placeholder="Escribe aquí una dirección, dato, recordatorio o cualquier texto..."></textarea>
+
+      <div class="cq-note-actions">
+        <button id="cqSaveNote" class="cq-tool-btn cq-tool-main">+ Guardar nota</button>
+      </div>
+
+      <input id="cqSearchNotes" class="cq-note-input"
+        placeholder="🔎 Buscar notas...">
+
+      <div id="cqNotesList"></div>
+    </div>
+  `
+  document.body.appendChild(overlay)
+
+  const titleInput = overlay.querySelector<HTMLInputElement>('#cqNoteTitle')!
+  const textInput = overlay.querySelector<HTMLTextAreaElement>('#cqNoteText')!
+  const categoryInput = overlay.querySelector<HTMLSelectElement>('#cqNoteCategory')!
+  const searchInput = overlay.querySelector<HTMLInputElement>('#cqSearchNotes')!
+  const list = overlay.querySelector<HTMLDivElement>('#cqNotesList')!
+
+  let editingId: number | null = null
+
+  function renderNotes() {
+    const q = searchInput.value.trim().toLowerCase()
+
+    const filtered = [...notes]
+      .filter(n =>
+        !q ||
+        n.title.toLowerCase().includes(q) ||
+        n.text.toLowerCase().includes(q) ||
+        n.category.toLowerCase().includes(q)
+      )
+      .sort((a,b) => Number(b.favorite) - Number(a.favorite))
+
+    if (!filtered.length) {
+      list.innerHTML = '<p style="opacity:.65;margin-top:18px">No hay notas guardadas.</p>'
+      return
+    }
+
+    list.innerHTML = filtered.map(n => `
+      <div class="cq-note-card">
+        <h3>${n.favorite ? '⭐ ' : ''}${escapeHtml(n.title || 'Sin título')}</h3>
+        <div class="cq-note-meta">${escapeHtml(n.category)}</div>
+        <p>${escapeHtml(n.text)}</p>
+        <div class="cq-note-actions">
+          <button class="cq-tool-btn" data-action="favorite" data-id="${n.id}">
+            ${n.favorite ? '★ Quitar favorito' : '☆ Favorito'}
+          </button>
+          <button class="cq-tool-btn" data-action="copy" data-id="${n.id}">📋 Copiar</button>
+          <button class="cq-tool-btn" data-action="edit" data-id="${n.id}">✏️ Editar</button>
+          <button class="cq-tool-btn" data-action="delete" data-id="${n.id}">🗑️ Eliminar</button>
+        </div>
+      </div>
+    `).join('')
+  }
+
+  function escapeHtml(value: string) {
+    return value
+      .replaceAll('&','&amp;')
+      .replaceAll('<','&lt;')
+      .replaceAll('>','&gt;')
+      .replaceAll('"','&quot;')
+      .replaceAll("'","&#039;")
+  }
+
+  notesBtn.onclick = () => {
+    overlay.style.display = 'block'
+    renderNotes()
+  }
+
+  overlay.querySelector<HTMLButtonElement>('#cqCloseNotes')!.onclick = () => {
+    overlay.style.display = 'none'
+  }
+
+  overlay.querySelector<HTMLButtonElement>('#cqSaveNote')!.onclick = () => {
+    const title = titleInput.value.trim()
+    const text = textInput.value.trim()
+    const category = categoryInput.value
+
+    if (!text) {
+      alert('Escribe algo en la nota.')
+      return
+    }
+
+    if (editingId !== null) {
+      const note = notes.find(n => n.id === editingId)
+      if (note) {
+        note.title = title
+        note.text = text
+        note.category = category
+      }
+      editingId = null
+    } else {
+      notes.push({
+        id: Date.now(),
+        title,
+        text,
+        category,
+        favorite: false
+      })
+    }
+
+    saveNotes()
+    titleInput.value = ''
+    textInput.value = ''
+    categoryInput.value = 'General'
+    renderNotes()
+  }
+
+  searchInput.addEventListener('input', renderNotes)
+
+  list.addEventListener('click', async e => {
+    const button = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-id]')
+    if (!button) return
+
+    const id = Number(button.dataset.id)
+    const action = button.dataset.action
+    const note = notes.find(n => n.id === id)
+    if (!note) return
+
+    if (action === 'favorite') {
+      note.favorite = !note.favorite
+      saveNotes()
+      renderNotes()
+    }
+
+    if (action === 'copy') {
+      await navigator.clipboard.writeText(note.text)
+      alert('Nota copiada.')
+    }
+
+    if (action === 'edit') {
+      editingId = id
+      titleInput.value = note.title
+      textInput.value = note.text
+      categoryInput.value = note.category
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+
+    if (action === 'delete') {
+      if (!confirm('¿Eliminar esta nota?')) return
+      notes = notes.filter(n => n.id !== id)
+      saveNotes()
+      renderNotes()
+    }
+  })
+
+  logoutBtn.onclick = () => {
+    localStorage.removeItem('cq-token')
+    localStorage.removeItem('cq-user')
+    window.location.href = '/login.html'
+  }
+})()
