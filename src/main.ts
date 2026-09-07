@@ -517,3 +517,33 @@ render()
   }
 })()
 
+
+// ===== CONTROL AUTOMATICO DE SESION =====
+async function cqValidateSession() {
+  const token = localStorage.getItem('cq-token')
+
+  if (!token) {
+    window.location.replace('/login.html')
+    return
+  }
+
+  try {
+    const response = await fetch('/api/session', {
+      headers: {
+        Authorization: `Bearer ${token}`
+      },
+      cache: 'no-store'
+    })
+
+    if (!response.ok) {
+      localStorage.removeItem('cq-token')
+      localStorage.removeItem('cq-user')
+      window.location.replace('/login.html')
+    }
+  } catch {
+    // Si solo hay una caída momentánea de Internet, no cerramos la sesión.
+  }
+}
+
+cqValidateSession()
+window.setInterval(cqValidateSession, 5000)

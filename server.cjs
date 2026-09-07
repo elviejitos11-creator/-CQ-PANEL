@@ -21,6 +21,15 @@ const db = new Database("cq-panel.db");
 
 db.pragma("journal_mode = WAL");
 
+
+try {
+  const userColumns = db.prepare("PRAGMA table_info(users)").all()
+  if (!userColumns.some(column => column.name === "session_version")) {
+    db.exec("ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0")
+  }
+} catch (error) {
+  console.error("Error preparando session_version:", error)
+}
 db.exec(`
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -30,6 +39,7 @@ CREATE TABLE IF NOT EXISTS users (
     license_expires TEXT,
     device_id TEXT,
     active INTEGER NOT NULL DEFAULT 1,
+    session_version INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -129,7 +139,7 @@ app.post("/api/login", (req, res) => {
             {
                 id: user.id,
                 username: user.username,
-                role: user.role
+                role: user.role, session_version: db.prepare("SELECT session_version FROM users WHERE id = ?").get(user.id).session_version
             },
             JWT_SECRET,
             { expiresIn: "12h" }
@@ -155,20 +165,80 @@ app.post("/api/login", (req, res) => {
 // PROTECCIÃ“N DE RUTAS
 // ===============================
 
-function auth(req, res, next) {
-    const authorization = req.headers.authorization;
 
-    if (!authorization?.startsWith("Bearer ")) {
-        return res.status(401).json({ error: "Acceso no autorizado." });
+db.exec(`
+  CREATE TRIGGER IF NOT EXISTS users_revoke_session
+  AFTER UPDATE OF username, password_hash, active ON users
+  WHEN OLD.role != 'admin'
+  BEGIN
+    UPDATE users
+    SET session_version = OLD.session_version + 1
+    WHERE id = OLD.id;
+  END;
+`);
+function auth(req, res, next) {
+  const authorization = req.headers.authorization;
+
+  if (!authorization?.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "Acceso no autorizado." });
+  }
+
+  try {
+    const token = authorization.substring(7);
+    const payload = jwt.verify(token, JWT_SECRET);
+
+    const currentUser = db.prepare(`
+      SELECT
+        id,
+        username,
+        role,
+        license_expires,
+        device_id,
+        active,
+        session_version
+      FROM users
+      WHERE id = ?
+    `).get(payload.id);
+
+    if (!currentUser) {
+      return res.status(401).json({ error: "Usuario eliminado." });
     }
 
-    try {
-        const token = authorization.substring(7);
-        req.user = jwt.verify(token, JWT_SECRET);
-        next();
-    } catch (error) { console.error("JWT ERROR:", error.message); res.status(401).json({ error: "Sesion invalida: " + error.message }); }
+    if (!currentUser.active) {
+      return res.status(403).json({ error: "Usuario bloqueado." });
+    }
+
+    if (
+      currentUser.role !== "admin" &&
+      currentUser.license_expires &&
+      new Date(currentUser.license_expires).getTime() <= Date.now()
+    ) {
+      return res.status(403).json({ error: "Licencia vencida." });
+    }
+
+    if (payload.session_version !== currentUser.session_version) {
+      return res.status(401).json({ error: "Sesion revocada." });
+    }
+
+    req.user = currentUser;
+    next();
+
+  } catch (error) {
+    return res.status(401).json({ error: "Sesion invalida." });
+  }
 }
 
+app.get("/api/session", auth, (req, res) => {
+  res.json({
+    success: true,
+    user: {
+      id: req.user.id,
+      username: req.user.username,
+      role: req.user.role,
+      licenseExpires: req.user.license_expires
+    }
+  });
+});
 function adminOnly(req, res, next) {
     if (req.user.role !== "admin") {
         return res.status(403).json({
@@ -263,7 +333,7 @@ app.get("/api/admin/users", auth, adminOnly, (req, res) => {
 app.post("/api/admin/users/:id/reset-device", auth, adminOnly, (req, res) => {
     db.prepare(`
         UPDATE users
-        SET device_id = NULL
+        SET device_id = NULL, session_version = session_version + 1
         WHERE id = ? AND role != 'admin'
     `).run(req.params.id);
 
@@ -445,6 +515,8 @@ app.listen(PORT, () => {
     console.log(`CQ PANEL funcionando en http://localhost:${PORT}`);
     console.log("");
 });
+
+
 
 
 
