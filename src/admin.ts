@@ -1,4 +1,4 @@
-﻿const API = "http://localhost:3000"
+﻿const API = window.location.origin
 
 const token = localStorage.getItem("cq-token")
 const savedUser = JSON.parse(localStorage.getItem("cq-user") || "null")
@@ -17,7 +17,7 @@ document.body.innerHTML = `
       <p class="sub">Usuarios, licencias y dispositivos</p>
     </div>
 
-    <a class="back" href="/">← Volver al panel</a>
+    <a class="back" href="/index.html">← Volver al panel</a>
   </header>
 
   <section class="create-box">

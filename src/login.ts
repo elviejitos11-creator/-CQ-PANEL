@@ -1,4 +1,4 @@
-﻿const API = 'http://localhost:3000'
+﻿const API = window.location.origin
 
 function getDeviceId(): string {
   let deviceId = localStorage.getItem('cq-device-id')
@@ -314,7 +314,7 @@ form.addEventListener('submit', async (event) => {
     localStorage.setItem('cq-token', data.token)
     localStorage.setItem('cq-user', JSON.stringify(data.user))
 
-    window.location.href = 'http://localhost:5173/'
+    window.location.href = '/index.html'
   } catch (error) {
     message.textContent =
       error instanceof Error

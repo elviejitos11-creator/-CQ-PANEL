@@ -4,9 +4,10 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const cors = require("cors");
 const crypto = require("crypto");
+const path = require("path");
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(64).toString("hex");
 
 app.use(cors());
@@ -53,19 +54,19 @@ const adminExists = db
     .get();
 
 if (!adminExists) {
-    const temporaryPassword = crypto.randomBytes(9).toString("base64url");
+    const temporaryPassword = process.env.ADMIN_PASSWORD || crypto.randomBytes(9).toString("base64url");
     const passwordHash = bcrypt.hashSync(temporaryPassword, 12);
 
     db.prepare(`
         INSERT INTO users
         (username, password_hash, role, license_expires, active)
         VALUES (?, ?, 'admin', NULL, 1)
-    `).run("CQ", passwordHash);
+    `).run(process.env.ADMIN_USER || "CQ", passwordHash);
 
     console.log("");
     console.log("======================================");
     console.log(" ADMINISTRADOR CQ CREADO");
-    console.log(" Usuario: CQ");
+    console.log(" Usuario:", process.env.ADMIN_USER || "CQ");
     console.log(" Contraseña temporal:", temporaryPassword);
     console.log(" GUARDA ESTA CONTRASEÑA.");
     console.log("======================================");
@@ -345,6 +346,23 @@ app.get("/api/status", (req, res) => {
         online: true,
         name: "CQ PANEL"
     });
+});
+
+
+const distPath = path.join(__dirname, "dist");
+
+app.use(express.static(distPath));
+
+app.get("/", (req, res) => {
+    res.sendFile(path.join(distPath, "login.html"));
+});
+
+app.get("/login.html", (req, res) => {
+    res.sendFile(path.join(distPath, "login.html"));
+});
+
+app.get("/admin.html", (req, res) => {
+    res.sendFile(path.join(distPath, "admin.html"));
 });
 
 app.listen(PORT, () => {
