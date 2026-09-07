@@ -184,7 +184,9 @@ function renderCards(items: LinkItem[]) {
       <h3>${item.name}</h3>
       <div class="card-actions">
         <a href="${item.url}" target="_blank" rel="noopener">Abrir</a>
-        <button class="delete" data-id="${item.id}">Eliminar</button>
+        <button class="move-up" data-id="${item.id}" title="Subir">⬆️</button>
+<button class="move-down" data-id="${item.id}" title="Bajar">⬇️</button>
+<button class="delete" data-id="${item.id}">Eliminar</button>
       </div>
     </article>
   `).join('')
@@ -547,3 +549,4 @@ async function cqValidateSession() {
 
 cqValidateSession()
 window.setInterval(cqValidateSession, 5000)
+
