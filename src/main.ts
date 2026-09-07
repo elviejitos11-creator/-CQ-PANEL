@@ -368,14 +368,14 @@ function sortableEvents() {
     animation: 180,
 
     // Mantener presionado antes de mover
-    delay: 300,
+    delay: 180,
     delayOnTouchOnly: true,
-    touchStartThreshold: 5,
+    touchStartThreshold: 3,
 
-    // Mejor comportamiento en iPhone
+    // Ajuste más estable para iPhone/Safari
     forceFallback: true,
-    fallbackOnBody: true,
-    fallbackTolerance: 4,
+    fallbackOnBody: false,
+    fallbackTolerance: 2,
 
     // No iniciar arrastre desde botones
     filter: 'a, button, input',
@@ -385,15 +385,15 @@ function sortableEvents() {
     dragClass: 'cq-dragging',
 
     onStart: () => {
-      document.body.style.overflow = 'hidden'
       document.body.style.userSelect = 'none'
       document.body.style.webkitUserSelect = 'none'
+      document.documentElement.style.overscrollBehavior = 'none'
     },
 
     onEnd: () => {
-      document.body.style.overflow = ''
       document.body.style.userSelect = ''
       document.body.style.webkitUserSelect = ''
+      document.documentElement.style.overscrollBehavior = ''
 
       const ordered: LinkItem[] = []
 
@@ -717,6 +717,7 @@ async function cqValidateSession() {
 
 cqValidateSession()
 window.setInterval(cqValidateSession, 5000)
+
 
 
 
