@@ -1,4 +1,4 @@
-﻿const API = window.location.origin
+﻿
 
 function getDeviceId(): string {
   let deviceId = localStorage.getItem('cq-device-id')
@@ -325,5 +325,6 @@ form.addEventListener('submit', async (event) => {
     button.textContent = 'ENTRAR AL PANEL'
   }
 })
+
 
 
