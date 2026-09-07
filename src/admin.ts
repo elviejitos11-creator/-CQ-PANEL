@@ -385,3 +385,81 @@ document.querySelector("#createUser")?.addEventListener("click", async () => {
 document.querySelector("#refresh")?.addEventListener("click", loadUsers)
 
 loadUsers()
+
+// ===== LIBERAR DISPOSITIVO DESDE ADMIN =====
+function agregarBotonLiberarDispositivo() {
+  if (document.querySelector('#resetDeviceBtn')) return
+
+  const btn = document.createElement('button')
+  btn.id = 'resetDeviceBtn'
+  btn.textContent = '📱 Liberar dispositivo'
+
+  btn.style.position = 'fixed'
+  btn.style.right = '24px'
+  btn.style.bottom = '24px'
+  btn.style.zIndex = '9999'
+  btn.style.padding = '14px 20px'
+  btn.style.border = '0'
+  btn.style.borderRadius = '14px'
+  btn.style.cursor = 'pointer'
+  btn.style.fontWeight = '800'
+  btn.style.color = 'white'
+  btn.style.background = 'linear-gradient(90deg,#168cff,#7c35ff,#e900d7)'
+  btn.style.boxShadow = '0 0 25px rgba(124,53,255,.55)'
+
+  btn.addEventListener('click', async () => {
+    const username = prompt('Usuario al que quieres liberar el dispositivo:')
+
+    if (!username) return
+
+    const token = localStorage.getItem('cq-token')
+
+    if (!token) {
+      alert('Tu sesión de administrador no está activa.')
+      return
+    }
+
+    try {
+      const usersResponse = await fetch('/api/admin/users', {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      })
+
+      const users = await usersResponse.json()
+
+      const user = users.find(
+        (u: any) => u.username.toLowerCase() === username.trim().toLowerCase()
+      )
+
+      if (!user) {
+        alert('Ese usuario no existe.')
+        return
+      }
+
+      const response = await fetch(`/api/admin/users/${user.id}/reset-device`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        alert(data.error || 'No se pudo liberar el dispositivo.')
+        return
+      }
+
+      alert(`Dispositivo de ${user.username} liberado correctamente.`)
+      window.location.reload()
+
+    } catch (error) {
+      alert('Error al liberar el dispositivo.')
+    }
+  })
+
+  document.body.appendChild(btn)
+}
+
+agregarBotonLiberarDispositivo()
