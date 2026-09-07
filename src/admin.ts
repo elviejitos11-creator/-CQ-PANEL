@@ -463,3 +463,109 @@ function agregarBotonLiberarDispositivo() {
 }
 
 agregarBotonLiberarDispositivo()
+
+// ===== BOTONES DE GESTION DE CLIENTES =====
+function instalarControlesClientes() {
+  const ponerBotones = () => {
+    document.querySelectorAll<HTMLTableRowElement>('#users tbody tr').forEach(row => {
+      if (row.querySelector('.cq-edit-user')) return
+
+      const cells = row.querySelectorAll<HTMLTableCellElement>('td')
+      if (cells.length < 6) return
+
+      const role = cells[1]?.textContent?.trim()
+      if (role === 'admin') return
+
+      const reset = row.querySelector<HTMLButtonElement>('button[data-id]')
+      if (!reset) return
+
+      const id = reset.dataset.id
+      if (!id) return
+
+      const actions = cells[cells.length - 1]
+
+      const edit = document.createElement('button')
+      edit.className = 'action cq-edit-user'
+      edit.textContent = 'Editar usuario'
+      edit.onclick = async () => {
+        const actual = cells[0].textContent?.trim() || ''
+        const username = prompt('Nuevo nombre de usuario:', actual)
+        if (!username || username.trim() === actual) return
+
+        try {
+          await api(`/api/admin/users/${id}/username`, {
+            method: 'PATCH',
+            body: JSON.stringify({ username: username.trim() })
+          })
+          await loadUsers()
+        } catch (e) {
+          alert(e instanceof Error ? e.message : 'No se pudo editar el usuario.')
+        }
+      }
+
+      const password = document.createElement('button')
+      password.className = 'action'
+      password.textContent = 'Cambiar contraseña'
+      password.onclick = async () => {
+        const nueva = prompt('Nueva contraseña para este cliente:')
+        if (!nueva) return
+
+        try {
+          await api(`/api/admin/users/${id}/password`, {
+            method: 'PATCH',
+            body: JSON.stringify({ password: nueva })
+          })
+          alert('Contraseña cambiada correctamente.')
+        } catch (e) {
+          alert(e instanceof Error ? e.message : 'No se pudo cambiar la contraseña.')
+        }
+      }
+
+      const status = document.createElement('button')
+      status.className = 'action'
+      const estaActivo = cells[4]?.textContent?.trim() === 'Activo'
+      status.textContent = estaActivo ? 'Bloquear' : 'Activar'
+      status.onclick = async () => {
+        try {
+          await api(`/api/admin/users/${id}/status`, {
+            method: 'POST',
+            body: JSON.stringify({ active: !estaActivo })
+          })
+          await loadUsers()
+        } catch (e) {
+          alert(e instanceof Error ? e.message : 'No se pudo cambiar el estado.')
+        }
+      }
+
+      const eliminar = document.createElement('button')
+      eliminar.className = 'action'
+      eliminar.textContent = 'Eliminar'
+      eliminar.onclick = async () => {
+        const nombre = cells[0]?.textContent?.trim() || 'este usuario'
+        if (!confirm(`¿Eliminar definitivamente a ${nombre}?`)) return
+
+        try {
+          await api(`/api/admin/users/${id}`, {
+            method: 'DELETE'
+          })
+          await loadUsers()
+        } catch (e) {
+          alert(e instanceof Error ? e.message : 'No se pudo eliminar el usuario.')
+        }
+      }
+
+      actions.append(edit, password, status, eliminar)
+    })
+  }
+
+  const observer = new MutationObserver(ponerBotones)
+  const users = document.querySelector('#users')
+
+  if (users) {
+    observer.observe(users, { childList: true, subtree: true })
+  }
+
+  ponerBotones()
+}
+
+instalarControlesClientes()

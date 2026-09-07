@@ -337,6 +337,81 @@ app.delete("/api/links/:id", auth, (req, res) => {
     res.json({ success: true });
 });
 
+
+// ===== CONTROLES ADMIN DE CLIENTES =====
+
+// Cambiar nombre de usuario
+app.patch('/api/admin/users/:id/username', auth, adminOnly, (req, res) => {
+  const username = String(req.body.username || '').trim()
+
+  if (username.length < 3) {
+    return res.status(400).json({ error: 'Usuario demasiado corto.' })
+  }
+
+  const user = db.prepare(
+    `SELECT id, role FROM users WHERE id = ?`
+  ).get(req.params.id)
+
+  if (!user || user.role === 'admin') {
+    return res.status(403).json({ error: 'No se puede modificar el administrador.' })
+  }
+
+  try {
+    db.prepare(`
+      UPDATE users
+      SET username = ?
+      WHERE id = ? AND role != 'admin'
+    `).run(username, req.params.id)
+
+    res.json({ success: true })
+  } catch {
+    res.status(400).json({ error: 'Ese nombre de usuario ya existe.' })
+  }
+})
+
+// Cambiar contraseña
+app.patch('/api/admin/users/:id/password', auth, adminOnly, (req, res) => {
+  const password = String(req.body.password || '')
+
+  if (password.length < 4) {
+    return res.status(400).json({ error: 'La contraseña es demasiado corta.' })
+  }
+
+  const user = db.prepare(
+    `SELECT id, role FROM users WHERE id = ?`
+  ).get(req.params.id)
+
+  if (!user || user.role === 'admin') {
+    return res.status(403).json({ error: 'No se puede modificar el administrador.' })
+  }
+
+  const passwordHash = bcrypt.hashSync(password, 12)
+
+  db.prepare(`
+    UPDATE users
+    SET password_hash = ?
+    WHERE id = ? AND role != 'admin'
+  `).run(passwordHash, req.params.id)
+
+  res.json({ success: true })
+})
+
+// Eliminar cliente
+app.delete('/api/admin/users/:id', auth, adminOnly, (req, res) => {
+  const user = db.prepare(
+    `SELECT id, role FROM users WHERE id = ?`
+  ).get(req.params.id)
+
+  if (!user || user.role === 'admin') {
+    return res.status(403).json({ error: 'No se puede eliminar el administrador.' })
+  }
+
+  db.prepare(`DELETE FROM links WHERE user_id = ?`).run(req.params.id)
+  db.prepare(`DELETE FROM users WHERE id = ? AND role != 'admin'`).run(req.params.id)
+
+  res.json({ success: true })
+})
+
 // ===============================
 // SERVIDOR
 // ===============================
@@ -370,6 +445,7 @@ app.listen(PORT, () => {
     console.log(`CQ PANEL funcionando en http://localhost:${PORT}`);
     console.log("");
 });
+
 
 
 
