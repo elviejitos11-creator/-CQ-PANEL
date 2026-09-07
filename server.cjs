@@ -113,7 +113,9 @@ app.post("/api/login", (req, res) => {
             });
         }
 
-        if (!user.device_id) {
+        if (user.role === 'admin') {
+            // ADMIN sin bloqueo de dispositivo
+        } else if (!user.device_id) {
             db.prepare(
                 "UPDATE users SET device_id = ? WHERE id = ?"
             ).run(deviceId, user.id);
@@ -370,3 +372,4 @@ app.listen(PORT, () => {
     console.log(`CQ PANEL funcionando en http://localhost:${PORT}`);
     console.log("");
 });
+
