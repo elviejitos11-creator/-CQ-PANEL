@@ -1,4 +1,4 @@
-const express = require("express");
+﻿const express = require("express");
 const Database = require("better-sqlite3");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS links (
     name TEXT NOT NULL,
     url TEXT NOT NULL,
     category TEXT DEFAULT 'General',
-    icon TEXT DEFAULT '🔗',
+    icon TEXT DEFAULT 'ðŸ”—',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
 );
@@ -67,8 +67,8 @@ if (!adminExists) {
     console.log("======================================");
     console.log(" ADMINISTRADOR CQ CREADO");
     console.log(" Usuario:", process.env.ADMIN_USER || "CQ");
-    console.log(" Contraseña temporal:", temporaryPassword);
-    console.log(" GUARDA ESTA CONTRASEÑA.");
+    console.log(" ContraseÃ±a temporal:", temporaryPassword);
+    console.log(" GUARDA ESTA CONTRASEÃ‘A.");
     console.log("======================================");
     console.log("");
 }
@@ -83,7 +83,7 @@ app.post("/api/login", (req, res) => {
 
         if (!username || !password || !deviceId) {
             return res.status(400).json({
-                error: "Faltan datos de inicio de sesión."
+                error: "Faltan datos de inicio de sesiÃ³n."
             });
         }
 
@@ -93,13 +93,13 @@ app.post("/api/login", (req, res) => {
 
         if (!user || !bcrypt.compareSync(password, user.password_hash)) {
             return res.status(401).json({
-                error: "Usuario o contraseña incorrectos."
+                error: "Usuario o contraseÃ±a incorrectos."
             });
         }
 
         if (!user.active) {
             return res.status(403).json({
-                error: "Esta cuenta está bloqueada."
+                error: "Esta cuenta estÃ¡ bloqueada."
             });
         }
 
@@ -119,7 +119,7 @@ app.post("/api/login", (req, res) => {
             ).run(deviceId, user.id);
         } else if (user.device_id !== deviceId) {
             return res.status(403).json({
-                error: "Esta licencia ya está vinculada a otro dispositivo."
+                error: "Esta licencia ya estÃ¡ vinculada a otro dispositivo."
             });
         }
 
@@ -150,7 +150,7 @@ app.post("/api/login", (req, res) => {
 });
 
 // ===============================
-// PROTECCIÓN DE RUTAS
+// PROTECCIÃ“N DE RUTAS
 // ===============================
 
 function auth(req, res, next) {
@@ -165,7 +165,7 @@ function auth(req, res, next) {
         req.user = jwt.verify(token, JWT_SECRET);
         next();
     } catch {
-        res.status(401).json({ error: "Sesión inválida." });
+        res.status(401).json({ error: "SesiÃ³n invÃ¡lida." });
     }
 }
 
@@ -189,7 +189,7 @@ app.post("/api/admin/users", auth, adminOnly, (req, res) => {
 
         if (!username || !password || !days) {
             return res.status(400).json({
-                error: "Usuario, contraseña y días son obligatorios."
+                error: "Usuario, contraseÃ±a y dÃ­as son obligatorios."
             });
         }
 
@@ -197,7 +197,7 @@ app.post("/api/admin/users", auth, adminOnly, (req, res) => {
 
         if (!Number.isInteger(licenseDays) || licenseDays < 1) {
             return res.status(400).json({
-                error: "Los días de licencia no son válidos."
+                error: "Los dÃ­as de licencia no son vÃ¡lidos."
             });
         }
 
@@ -319,7 +319,7 @@ app.post("/api/links", auth, (req, res) => {
         name,
         url,
         category || "General",
-        icon || "🔗"
+        icon || "ðŸ”—"
     );
 
     res.json({

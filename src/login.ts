@@ -325,3 +325,4 @@ form.addEventListener('submit', async (event) => {
     button.textContent = 'ENTRAR AL PANEL'
   }
 })
+
