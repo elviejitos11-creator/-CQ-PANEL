@@ -166,7 +166,7 @@ function auth(req, res, next) {
         const token = authorization.substring(7);
         req.user = jwt.verify(token, JWT_SECRET);
         next();
-    } catch (error) { console.error("JWT ERROR:", error.message); res.status(401).json({ error: "Sesion invalida." }); }
+    } catch (error) { console.error("JWT ERROR:", error.message); res.status(401).json({ error: "Sesion invalida: " + error.message }); }
 }
 
 function adminOnly(req, res, next) {
@@ -370,6 +370,7 @@ app.listen(PORT, () => {
     console.log(`CQ PANEL funcionando en http://localhost:${PORT}`);
     console.log("");
 });
+
 
 
 
