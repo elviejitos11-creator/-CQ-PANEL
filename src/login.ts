@@ -293,7 +293,7 @@ form.addEventListener('submit', async (event) => {
   button.textContent = 'VERIFICANDO...'
 
   try {
-    const response = await fetch(`${API}/api/login`, {
+    const response = await fetch("/api/login", {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -325,4 +325,5 @@ form.addEventListener('submit', async (event) => {
     button.textContent = 'ENTRAR AL PANEL'
   }
 })
+
 
