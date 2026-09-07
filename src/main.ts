@@ -178,14 +178,12 @@ function renderCards(items: LinkItem[]) {
   }
 
   return items.map(item => `
-    <article class="card">
+    <article class="card" data-id="${item.id}">
       <div class="card-icon">${item.icon || 'ðŸ”—'}</div>
       <div class="category">${item.category || 'General'}</div>
       <h3>${item.name}</h3>
       <div class="card-actions">
         <a href="${item.url}" target="_blank" rel="noopener">Abrir</a>
-        <button class="move-up" data-id="${item.id}" title="Subir">⬆️</button>
-<button class="move-down" data-id="${item.id}" title="Bajar">⬇️</button>
 <button class="delete" data-id="${item.id}">Eliminar</button>
       </div>
     </article>
@@ -249,7 +247,112 @@ function events() {
   deleteEvents()
 }
 
+function dragEvents() {
+  document.querySelectorAll<HTMLElement>('.card[data-id]').forEach(card => {
+    let timer = 0
+    let dragging = false
+    let pointerId = -1
+
+    const cancelHold = () => {
+      if (timer) {
+        window.clearTimeout(timer)
+        timer = 0
+      }
+    }
+
+    card.addEventListener('pointerdown', (e: PointerEvent) => {
+      const target = e.target as HTMLElement
+
+      // Abrir y Eliminar siguen funcionando normalmente
+      if (target.closest('a, button, input')) return
+
+      pointerId = e.pointerId
+
+      timer = window.setTimeout(() => {
+        dragging = true
+
+        try {
+          card.setPointerCapture(pointerId)
+        } catch {}
+
+        card.style.opacity = '0.72'
+        card.style.transform = 'scale(0.98)'
+        card.style.zIndex = '999'
+        card.style.position = 'relative'
+
+        document.body.style.userSelect = 'none'
+      }, 350)
+    })
+
+    card.addEventListener('pointermove', (e: PointerEvent) => {
+      if (!dragging) return
+
+      e.preventDefault()
+
+      const under = document.elementFromPoint(e.clientX, e.clientY)
+      const targetCard = under?.closest<HTMLElement>('.card[data-id]')
+
+      if (!targetCard || targetCard === card) return
+
+      const rect = targetCard.getBoundingClientRect()
+      const parent = targetCard.parentElement
+
+      if (!parent) return
+
+      if (e.clientY < rect.top + rect.height / 2) {
+        parent.insertBefore(card, targetCard)
+      } else {
+        parent.insertBefore(card, targetCard.nextSibling)
+      }
+
+      // Ayuda a mover listas largas en móvil
+      if (e.clientY < 100) {
+        window.scrollBy(0, -12)
+      } else if (e.clientY > window.innerHeight - 100) {
+        window.scrollBy(0, 12)
+      }
+    })
+
+    const finishDrag = () => {
+      cancelHold()
+
+      if (!dragging) return
+
+      dragging = false
+
+      card.style.opacity = ''
+      card.style.transform = ''
+      card.style.zIndex = ''
+      card.style.position = ''
+
+      document.body.style.userSelect = ''
+
+      const ordered: LinkItem[] = []
+
+      document.querySelectorAll<HTMLElement>('#cards .card[data-id]').forEach(el => {
+        const id = Number(el.dataset.id)
+        const link = links.find(item => item.id === id)
+
+        if (link) ordered.push(link)
+      })
+
+      if (ordered.length === links.length) {
+        links = ordered
+        saveLinks()
+      }
+
+      render()
+    }
+
+    card.addEventListener('pointerup', finishDrag)
+    card.addEventListener('pointercancel', finishDrag)
+    card.addEventListener('pointerleave', () => {
+      if (!dragging) cancelHold()
+    })
+  })
+}
 function deleteEvents() {
+  dragEvents()
   document.querySelectorAll<HTMLButtonElement>('.delete').forEach(button => {
     button.addEventListener('click', () => {
       const id = Number(button.dataset.id)
@@ -549,4 +652,5 @@ async function cqValidateSession() {
 
 cqValidateSession()
 window.setInterval(cqValidateSession, 5000)
+
 
