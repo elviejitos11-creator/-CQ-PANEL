@@ -1,4 +1,5 @@
-﻿import './style.css'
+﻿import Sortable from 'sortablejs'
+import './style.css'
 
 type LinkItem = {
   id: number
@@ -351,7 +352,71 @@ function dragEvents() {
     })
   })
 }
+
+let cqSortable: Sortable | null = null
+
+function sortableEvents() {
+  const container = document.querySelector<HTMLElement>('#cards')
+  if (!container) return
+
+  if (cqSortable) {
+    cqSortable.destroy()
+    cqSortable = null
+  }
+
+  cqSortable = new Sortable(container, {
+    animation: 180,
+
+    // Mantener presionado antes de mover
+    delay: 300,
+    delayOnTouchOnly: true,
+    touchStartThreshold: 5,
+
+    // Mejor comportamiento en iPhone
+    forceFallback: true,
+    fallbackOnBody: true,
+    fallbackTolerance: 4,
+
+    // No iniciar arrastre desde botones
+    filter: 'a, button, input',
+
+    ghostClass: 'cq-drag-ghost',
+    chosenClass: 'cq-drag-chosen',
+    dragClass: 'cq-dragging',
+
+    onStart: () => {
+      document.body.style.overflow = 'hidden'
+      document.body.style.userSelect = 'none'
+      document.body.style.webkitUserSelect = 'none'
+    },
+
+    onEnd: () => {
+      document.body.style.overflow = ''
+      document.body.style.userSelect = ''
+      document.body.style.webkitUserSelect = ''
+
+      const ordered: LinkItem[] = []
+
+      container
+        .querySelectorAll<HTMLElement>('.card[data-id]')
+        .forEach(card => {
+          const id = Number(card.dataset.id)
+          const item = links.find(link => link.id === id)
+
+          if (item) ordered.push(item)
+        })
+
+      if (ordered.length === links.length) {
+        links = ordered
+        saveLinks()
+      }
+
+      render()
+    }
+  })
+}
 function deleteEvents() {
+  sortableEvents()
   dragEvents()
   document.querySelectorAll<HTMLButtonElement>('.delete').forEach(button => {
     button.addEventListener('click', () => {
@@ -652,5 +717,6 @@ async function cqValidateSession() {
 
 cqValidateSession()
 window.setInterval(cqValidateSession, 5000)
+
 
 
