@@ -49,8 +49,30 @@ if (!cqToken || !cqUser) {
   window.location.href = '/login.html'
 }
 
+const linksKey = `cq-links-${cqUser.username}`
+
+// Migrar solamente los enlaces antiguos del ADMIN
+if (cqUser.role === 'admin' && !localStorage.getItem(linksKey)) {
+  const oldAdminLinks = localStorage.getItem('cq-links')
+
+  if (oldAdminLinks) {
+    localStorage.setItem(linksKey, oldAdminLinks)
+  } else {
+    localStorage.setItem(linksKey, JSON.stringify(links))
+  }
+}
+
+// Todo cliente nuevo empieza completamente vacío
+if (cqUser.role !== 'admin' && !localStorage.getItem(linksKey)) {
+  localStorage.setItem(linksKey, '[]')
+}
+
+// Cargar exclusivamente los enlaces de ESTE usuario
+const privateLinks = JSON.parse(localStorage.getItem(linksKey) || '[]')
+links.splice(0, links.length, ...privateLinks)
+
 function saveLinks() {
-  localStorage.setItem('cq-links', JSON.stringify(links))
+  localStorage.setItem(linksKey, JSON.stringify(links))
 }
 
 function render() {
@@ -494,3 +516,4 @@ render()
     window.location.href = '/login.html'
   }
 })()
+
