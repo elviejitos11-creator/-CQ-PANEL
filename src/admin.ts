@@ -1,4 +1,4 @@
-﻿const API = window.location.origin
+const API = window.location.origin
 
 const token = localStorage.getItem("cq-token")
 const savedUser = JSON.parse(localStorage.getItem("cq-user") || "null")
@@ -537,7 +537,26 @@ function instalarControlesClientes() {
         }
       }
 
-      const eliminar = document.createElement('button')
+      const vaultReset = document.createElement('button')
+vaultReset.className = 'action'
+vaultReset.textContent = 'Restablecer boveda'
+vaultReset.onclick = async () => {
+  const nombre = cells[0]?.textContent?.trim() || 'este usuario'
+
+  if (!confirm(`Restablecer la boveda de ${nombre}? Se eliminaran sus datos privados de la boveda.`)) return
+
+  try {
+    await api(`/api/admin/users/${id}/vault-reset`, {
+      method: 'POST'
+    })
+
+    alert('Boveda restablecida. El usuario podra crear una nueva contrasena.')
+  } catch (e) {
+    alert(e instanceof Error ? e.message : 'No se pudo restablecer la boveda.')
+  }
+}
+
+const eliminar = document.createElement('button')
       eliminar.className = 'action'
       eliminar.textContent = 'Eliminar'
       eliminar.onclick = async () => {
@@ -554,7 +573,7 @@ function instalarControlesClientes() {
         }
       }
 
-      actions.append(edit, password, status, eliminar)
+      actions.append(edit, password, status, vaultReset, eliminar)
     })
   }
 

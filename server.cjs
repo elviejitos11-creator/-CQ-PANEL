@@ -547,6 +547,65 @@ app.post("/api/admin/users/:id/status", auth, adminOnly, (req, res) => {
 });
 
 // ===============================
+
+// NOTAS NORMALES POR USUARIO
+db.exec(`
+CREATE TABLE IF NOT EXISTS notes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  client_id INTEGER NOT NULL,
+  title TEXT NOT NULL DEFAULT '',
+  text TEXT NOT NULL DEFAULT '',
+  category TEXT NOT NULL DEFAULT 'General',
+  favorite INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+`);
+
+app.get("/api/notes", auth, (req, res) => {
+  const rows = db.prepare(`
+    SELECT id, client_id AS id, title, text, category, favorite
+    FROM notes
+    WHERE user_id = ?
+    ORDER BY id ASC
+  `).all(req.user.id);
+
+  res.json(rows.map(x => ({
+    ...x,
+    favorite: !!x.favorite
+  })));
+});
+
+app.put("/api/notes/sync", auth, (req, res) => {
+  const notes = Array.isArray(req.body.notes) ? req.body.notes : [];
+
+  const sync = db.transaction((items) => {
+    db.prepare("DELETE FROM notes WHERE user_id = ?").run(req.user.id);
+
+    const insert = db.prepare(`
+      INSERT INTO notes
+      (user_id, client_id, title, text, category, favorite)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+
+    for (const item of items) {
+      if (!item) continue;
+
+      insert.run(
+        req.user.id,
+        Number(item.id) || Date.now(),
+        String(item.title || ""),
+        String(item.text || ""),
+        String(item.category || "General"),
+        item.favorite ? 1 : 0
+      );
+    }
+  });
+
+  sync(notes);
+  res.json({ success: true });
+});
 // ENLACES PRIVADOS DE CADA USUARIO
 // ===============================
 
@@ -686,6 +745,30 @@ app.patch('/api/admin/users/:id/password', auth, adminOnly, (req, res) => {
   res.json({ success: true })
 })
 
+
+// RESTABLECER BOVEDA DE UN USUARIO
+app.post("/api/admin/users/:id/vault-reset", auth, adminOnly, (req, res) => {
+  const user = db.prepare(`
+    SELECT id, role
+    FROM users
+    WHERE id = ?
+  `).get(req.params.id);
+
+  if (!user || user.role === "admin") {
+    return res.status(403).json({
+      error: "No se puede restablecer la boveda del administrador."
+    });
+  }
+
+  const resetVault = db.transaction(() => {
+    db.prepare("DELETE FROM vault_items WHERE user_id = ?").run(req.params.id);
+    db.prepare("DELETE FROM vault_settings WHERE user_id = ?").run(req.params.id);
+  });
+
+  resetVault();
+
+  res.json({ success: true });
+});
 // Eliminar cliente
 app.delete('/api/admin/users/:id', auth, adminOnly, (req, res) => {
   const user = db.prepare(
