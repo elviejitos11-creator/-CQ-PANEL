@@ -1,4 +1,4 @@
-﻿import Sortable from 'sortablejs'
+import Sortable from 'sortablejs'
 import './style.css'
 
 type LinkItem = {
@@ -437,6 +437,120 @@ render()
 
 
 
+
+// ===== VAULT CRYPTO ENGINE =====
+let vaultKey: CryptoKey | null = null
+let vaultUnlocked = false
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = ""
+  bytes.forEach(b => binary += String.fromCharCode(b))
+  return btoa(binary)
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  const binary = atob(value)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return bytes
+}
+
+function hexToBytes(hex: string): Uint8Array {
+  const bytes = new Uint8Array(hex.length / 2)
+  for (let i = 0; i < bytes.length; i++) {
+    bytes[i] = parseInt(hex.substr(i * 2, 2), 16)
+  }
+  return bytes
+}
+
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  return bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength
+  ) as ArrayBuffer
+}
+
+async function deriveVaultKey(password: string, saltHex: string): Promise<CryptoKey> {
+  const material = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(password),
+    "PBKDF2",
+    false,
+    ["deriveKey"]
+  )
+
+  return crypto.subtle.deriveKey(
+    {
+      name: "PBKDF2",
+      salt: toArrayBuffer(hexToBytes(saltHex)),
+      iterations: 250000,
+      hash: "SHA-256"
+    },
+    material,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  )
+}
+
+async function encryptVaultData(value: string) {
+  if (!vaultKey) throw new Error("Vault locked")
+
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const encrypted = new Uint8Array(
+    await crypto.subtle.encrypt(
+      { name: "AES-GCM", iv: toArrayBuffer(iv) },
+      vaultKey,
+      new TextEncoder().encode(value)
+    )
+  )
+
+  const tag = encrypted.slice(encrypted.length - 16)
+  const ciphertext = encrypted.slice(0, encrypted.length - 16)
+
+  return {
+    encrypted_data: bytesToBase64(ciphertext),
+    iv: bytesToBase64(iv),
+    auth_tag: bytesToBase64(tag)
+  }
+}
+
+async function decryptVaultData(data: string, ivText: string, tagText: string): Promise<string> {
+  if (!vaultKey) throw new Error("Vault locked")
+
+  const ciphertext = base64ToBytes(data)
+  const tag = base64ToBytes(tagText)
+  const combined = new Uint8Array(ciphertext.length + tag.length)
+
+  combined.set(ciphertext)
+  combined.set(tag, ciphertext.length)
+
+  const plain = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: toArrayBuffer(base64ToBytes(ivText)) },
+    vaultKey,
+    toArrayBuffer(combined)
+  )
+
+  return new TextDecoder().decode(plain)
+}
+
+async function vaultFetch(path: string, options: RequestInit = {}) {
+  return fetch(path, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${cqToken}`,
+      ...(options.headers || {})
+    }
+  })
+}
+
+void vaultUnlocked
+void deriveVaultKey
+void encryptVaultData
+void decryptVaultData
+void vaultFetch
+// ===== END VAULT CRYPTO ENGINE =====
 // ===== CQ PANEL: NOTAS + CERRAR SESION =====
 ;(() => {
   type CQNote = {
@@ -507,11 +621,432 @@ render()
   notesBtn.className = 'cq-tool-btn cq-tool-main'
   notesBtn.textContent = '📝 Notas'
 
-  const logoutBtn = document.createElement('button')
+  const vaultBtn = document.createElement('button')
+vaultBtn.className = 'cq-tool-btn cq-tool-main'
+vaultBtn.textContent = '\uD83D\uDD10 B\u00F3veda'
+
+const logoutBtn = document.createElement('button')
   logoutBtn.className = 'cq-tool-btn'
   logoutBtn.textContent = '🚪 Cerrar sesión'
 
-  tools.append(notesBtn, logoutBtn)
+  tools.append(notesBtn, vaultBtn, logoutBtn)
+
+
+function openVaultScreen() {
+  if (!vaultUnlocked || !vaultKey) {
+    alert("La boveda esta bloqueada.")
+    return
+  }
+
+  const old = document.getElementById("cqVaultOverlay")
+  if (old) old.remove()
+
+  const vaultOverlay = document.createElement("div")
+  vaultOverlay.id = "cqVaultOverlay"
+  vaultOverlay.style.cssText = "position:fixed;inset:0;z-index:9800;background:rgba(0,0,0,.88);padding:20px;overflow:auto;"
+
+  vaultOverlay.innerHTML = `
+    <div style="max-width:760px;margin:30px auto;background:#0b1026;border:1px solid #354067;border-radius:22px;padding:22px;color:white">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+        <div>
+          <div style="font-size:12px;opacity:.65">ESPACIO CIFRADO</div>
+          <h2 style="margin:5px 0">Boveda privada</h2>
+        </div>
+        <button id="cqCloseVault" class="cq-tool-btn">X</button>
+      </div>
+
+      <p style="opacity:.7">Tus contenidos privados estan separados por usuario y protegidos con tu segunda contrasena.</p>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:22px">
+        <button id="cqVaultNotes" class="cq-tool-btn cq-tool-main" style="padding:20px">Notas privadas</button>
+        <button id="cqVaultPhotos" class="cq-tool-btn cq-tool-main" style="padding:20px">Fotos</button>
+        <button id="cqVaultFiles" class="cq-tool-btn cq-tool-main" style="padding:20px">Archivos</button>
+      </div>
+
+      <div id="cqVaultContent" style="margin-top:20px"></div>
+    </div>
+  `
+
+  document.body.appendChild(vaultOverlay)
+
+  document.getElementById("cqCloseVault")!.onclick = () => vaultOverlay.remove()
+
+  document.getElementById("cqVaultNotes")!.onclick = async () => {
+    const content = document.getElementById("cqVaultContent")!
+
+    content.innerHTML = `
+      <div style="padding:18px;border:1px solid #354067;border-radius:16px">
+        <h3 style="margin-top:0">Notas privadas</h3>
+        <input id="cqPrivateNoteTitle" placeholder="Titulo" style="width:100%;padding:12px;margin-bottom:10px;border-radius:10px;border:1px solid #354067;background:#0b1026;color:white">
+        <textarea id="cqPrivateNoteText" placeholder="Escribe tu nota privada..." style="width:100%;min-height:120px;padding:12px;border-radius:10px;border:1px solid #354067;background:#0b1026;color:white"></textarea>
+        <button id="cqSavePrivateNote" class="cq-tool-btn cq-tool-main" style="margin-top:12px">Guardar nota privada</button>
+        <div id="cqPrivateNotesList" style="margin-top:18px"></div>
+      </div>
+    `
+
+    const loadPrivateNotes = async () => {
+      const list = document.getElementById("cqPrivateNotesList")!
+      list.innerHTML = "Cargando..."
+
+      const res = await vaultFetch("/api/vault/items")
+      const items = await res.json()
+
+      if (!res.ok) {
+        list.innerHTML = "No se pudieron cargar las notas."
+        return
+      }
+
+      const noteItems = items.filter((x: any) => x.item_type === "note")
+      const rendered: string[] = []
+
+      for (const item of noteItems) {
+        try {
+          const plain = await decryptVaultData(
+            item.encrypted_data,
+            item.iv,
+            item.auth_tag
+          )
+
+          const note = JSON.parse(plain)
+
+          rendered.push(`
+            <div style="padding:14px;margin-top:10px;border:1px solid #354067;border-radius:14px">
+              <strong>${escapeHtml(note.title || "Sin titulo")}</strong>
+              <div style="margin-top:8px;white-space:pre-wrap">${escapeHtml(note.text || "")}</div>
+              <button class="cq-tool-btn cqDeletePrivateNote" data-id="${item.id}" style="margin-top:10px">Eliminar</button>
+            </div>
+          `)
+        } catch {
+          rendered.push("<div style='padding:12px'>No se pudo descifrar una nota.</div>")
+        }
+      }
+
+      list.innerHTML = rendered.length ? rendered.join("") : "No tienes notas privadas."
+
+      document.querySelectorAll<HTMLButtonElement>(".cqDeletePrivateNote").forEach(btn => {
+        btn.onclick = async () => {
+          if (!confirm("Eliminar esta nota privada?")) return
+
+          await vaultFetch(`/api/vault/items/${btn.dataset.id}`, {
+            method: "DELETE"
+          })
+
+          loadPrivateNotes()
+        }
+      })
+    }
+
+    document.getElementById("cqSavePrivateNote")!.onclick = async () => {
+      const title = (document.getElementById("cqPrivateNoteTitle") as HTMLInputElement).value.trim()
+      const text = (document.getElementById("cqPrivateNoteText") as HTMLTextAreaElement).value.trim()
+
+      if (!text) {
+        alert("Escribe algo en la nota.")
+        return
+      }
+
+      const encrypted = await encryptVaultData(JSON.stringify({
+        title,
+        text
+      }))
+
+      const saveRes = await vaultFetch("/api/vault/items", {
+        method: "POST",
+        body: JSON.stringify({
+          item_type: "note",
+          name: title || "Nota privada",
+          mime_type: "application/json",
+          size_bytes: new TextEncoder().encode(text).length,
+          encrypted_data: encrypted.encrypted_data,
+          iv: encrypted.iv,
+          auth_tag: encrypted.auth_tag,
+          metadata_json: null
+        })
+      })
+
+      if (!saveRes.ok) {
+        alert("No se pudo guardar la nota.")
+        return
+      }
+
+      ;(document.getElementById("cqPrivateNoteTitle") as HTMLInputElement).value = ""
+      ;(document.getElementById("cqPrivateNoteText") as HTMLTextAreaElement).value = ""
+
+      loadPrivateNotes()
+    }
+
+    loadPrivateNotes()
+  }
+
+  document.getElementById("cqVaultPhotos")!.onclick = async () => {
+    const content = document.getElementById("cqVaultContent")!
+
+    content.innerHTML = `
+      <div style="padding:18px;border:1px solid #354067;border-radius:16px">
+        <h3 style="margin-top:0">Fotos privadas</h3>
+        <input id="cqPrivatePhotoInput" type="file" accept="image/*">
+        <button id="cqUploadPrivatePhoto" class="cq-tool-btn cq-tool-main" style="margin-top:12px">Guardar foto</button>
+        <div id="cqPrivatePhotosList" style="margin-top:18px"></div>
+      </div>
+    `
+
+    const loadPhotos = async () => {
+      const list = document.getElementById("cqPrivatePhotosList")!
+      list.innerHTML = "Cargando..."
+
+      const res = await vaultFetch("/api/vault/items")
+      const items = await res.json()
+
+      if (!res.ok) {
+        list.innerHTML = "No se pudieron cargar las fotos."
+        return
+      }
+
+      const photos = items.filter((x: any) => x.item_type === "photo")
+      const rendered: string[] = []
+
+      for (const item of photos) {
+        try {
+          const dataUrl = await decryptVaultData(item.encrypted_data, item.iv, item.auth_tag)
+
+          rendered.push(`
+            <div style="padding:12px;margin-top:10px;border:1px solid #354067;border-radius:14px">
+              <img src="${dataUrl}" style="width:100%;max-height:380px;object-fit:contain;border-radius:12px">
+              <div style="margin-top:8px">${escapeHtml(item.name || "Foto")}</div>
+              <button class="cq-tool-btn cqDeletePrivatePhoto" data-id="${item.id}" style="margin-top:8px">Eliminar</button>
+            </div>
+          `)
+        } catch {
+          rendered.push("<div>No se pudo abrir una foto.</div>")
+        }
+      }
+
+      list.innerHTML = rendered.length ? rendered.join("") : "No tienes fotos privadas."
+
+      document.querySelectorAll<HTMLButtonElement>(".cqDeletePrivatePhoto").forEach(btn => {
+        btn.onclick = async () => {
+          if (!confirm("Eliminar esta foto privada?")) return
+          await vaultFetch(`/api/vault/items/${btn.dataset.id}`, { method: "DELETE" })
+          loadPhotos()
+        }
+      })
+    }
+
+    document.getElementById("cqUploadPrivatePhoto")!.onclick = async () => {
+      const input = document.getElementById("cqPrivatePhotoInput") as HTMLInputElement
+      const file = input.files?.[0]
+
+      if (!file) {
+        alert("Selecciona una foto.")
+        return
+      }
+
+      if (file.size > 8 * 1024 * 1024) {
+        alert("La foto no puede pasar de 8 MB.")
+        return
+      }
+
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(String(reader.result))
+        reader.onerror = () => reject(reader.error)
+        reader.readAsDataURL(file)
+      })
+
+      const encrypted = await encryptVaultData(dataUrl)
+
+      const saveRes = await vaultFetch("/api/vault/items", {
+        method: "POST",
+        body: JSON.stringify({
+          item_type: "photo",
+          name: file.name,
+          mime_type: file.type,
+          size_bytes: file.size,
+          encrypted_data: encrypted.encrypted_data,
+          iv: encrypted.iv,
+          auth_tag: encrypted.auth_tag,
+          metadata_json: null
+        })
+      })
+
+      if (!saveRes.ok) {
+        alert("No se pudo guardar la foto.")
+        return
+      }
+
+      input.value = ""
+      loadPhotos()
+    }
+
+    loadPhotos()
+  }
+
+  document.getElementById("cqVaultFiles")!.onclick = async () => {
+    const content = document.getElementById("cqVaultContent")!
+
+    content.innerHTML = `
+      <div style="padding:18px;border:1px solid #354067;border-radius:16px">
+        <h3 style="margin-top:0">Archivos privados</h3>
+        <input id="cqPrivateFileInput" type="file">
+        <button id="cqUploadPrivateFile" class="cq-tool-btn cq-tool-main" style="margin-top:12px">Guardar archivo</button>
+        <div id="cqPrivateFilesList" style="margin-top:18px"></div>
+      </div>
+    `
+
+    const loadFiles = async () => {
+      const list = document.getElementById("cqPrivateFilesList")!
+      list.innerHTML = "Cargando..."
+
+      const res = await vaultFetch("/api/vault/items")
+      const items = await res.json()
+
+      if (!res.ok) {
+        list.innerHTML = "No se pudieron cargar los archivos."
+        return
+      }
+
+      const files = items.filter((x: any) => x.item_type === "file")
+      const rendered: string[] = []
+
+      for (const item of files) {
+        try {
+          const dataUrl = await decryptVaultData(item.encrypted_data, item.iv, item.auth_tag)
+
+          rendered.push(`
+            <div style="padding:14px;margin-top:10px;border:1px solid #354067;border-radius:14px">
+              <strong>${escapeHtml(item.name || "Archivo")}</strong>
+              <div style="margin-top:10px">
+                <a href="${dataUrl}" download="${escapeHtml(item.name || "archivo")}" class="cq-tool-btn">Abrir / guardar</a>
+                <button class="cq-tool-btn cqDeletePrivateFile" data-id="${item.id}">Eliminar</button>
+              </div>
+            </div>
+          `)
+        } catch {
+          rendered.push("<div>No se pudo abrir un archivo.</div>")
+        }
+      }
+
+      list.innerHTML = rendered.length ? rendered.join("") : "No tienes archivos privados."
+
+      document.querySelectorAll<HTMLButtonElement>(".cqDeletePrivateFile").forEach(btn => {
+        btn.onclick = async () => {
+          if (!confirm("Eliminar este archivo privado?")) return
+          await vaultFetch(`/api/vault/items/${btn.dataset.id}`, { method: "DELETE" })
+          loadFiles()
+        }
+      })
+    }
+
+    document.getElementById("cqUploadPrivateFile")!.onclick = async () => {
+      const input = document.getElementById("cqPrivateFileInput") as HTMLInputElement
+      const file = input.files?.[0]
+
+      if (!file) {
+        alert("Selecciona un archivo.")
+        return
+      }
+
+      if (file.size > 8 * 1024 * 1024) {
+        alert("El archivo no puede pasar de 8 MB.")
+        return
+      }
+
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(String(reader.result))
+        reader.onerror = () => reject(reader.error)
+        reader.readAsDataURL(file)
+      })
+
+      const encrypted = await encryptVaultData(dataUrl)
+
+      const saveRes = await vaultFetch("/api/vault/items", {
+        method: "POST",
+        body: JSON.stringify({
+          item_type: "file",
+          name: file.name,
+          mime_type: file.type || "application/octet-stream",
+          size_bytes: file.size,
+          encrypted_data: encrypted.encrypted_data,
+          iv: encrypted.iv,
+          auth_tag: encrypted.auth_tag,
+          metadata_json: null
+        })
+      })
+
+      if (!saveRes.ok) {
+        alert("No se pudo guardar el archivo.")
+        return
+      }
+
+      input.value = ""
+      loadFiles()
+    }
+
+    loadFiles()
+  }
+}
+vaultBtn.onclick = async () => {
+  try {
+    const statusRes = await vaultFetch("/api/vault/status")
+    const status = await statusRes.json()
+
+    if (!statusRes.ok) {
+      alert(status.error || "No se pudo consultar la boveda.")
+      return
+    }
+
+    if (!status.configured) {
+      const password = prompt("Crea la contrasena privada de tu boveda. Minimo 6 caracteres:")
+      if (!password) return
+
+      const confirmPassword = prompt("Repite la contrasena:")
+      if (password !== confirmPassword) {
+        alert("Las contrasenas no coinciden.")
+        return
+      }
+
+      const setupRes = await vaultFetch("/api/vault/setup", {
+        method: "POST",
+        body: JSON.stringify({ password })
+      })
+
+      const setup = await setupRes.json()
+
+      if (!setupRes.ok) {
+        alert(setup.error || "No se pudo crear la boveda.")
+        return
+      }
+
+      vaultKey = await deriveVaultKey(password, setup.salt)
+      vaultUnlocked = true
+      openVaultScreen()
+      return
+    }
+
+    const password = prompt("Escribe la contrasena de tu boveda:")
+    if (!password) return
+
+    const unlockRes = await vaultFetch("/api/vault/unlock", {
+      method: "POST",
+      body: JSON.stringify({ password })
+    })
+
+    const unlock = await unlockRes.json()
+
+    if (!unlockRes.ok) {
+      alert(unlock.error || "Contrasena incorrecta.")
+      return
+    }
+
+    vaultKey = await deriveVaultKey(password, unlock.salt)
+    vaultUnlocked = true
+    openVaultScreen()
+  } catch (error) {
+    console.error(error)
+    alert("Error al abrir la boveda.")
+  }
+}
   document.body.appendChild(tools)
 
   const overlay = document.createElement('div')

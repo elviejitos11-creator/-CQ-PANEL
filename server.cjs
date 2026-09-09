@@ -1,4 +1,4 @@
-﻿const express = require("express");
+const express = require("express");
 const Database = require("better-sqlite3");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
@@ -11,7 +11,7 @@ const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(64).toString("hex");
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "25mb" }));
 
 // ===============================
 // BASE DE DATOS
@@ -49,10 +49,35 @@ CREATE TABLE IF NOT EXISTS links (
     name TEXT NOT NULL,
     url TEXT NOT NULL,
     category TEXT DEFAULT 'General',
-    icon TEXT DEFAULT 'ðŸ”—',
+    icon TEXT DEFAULT '🔗',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS vault_settings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  encryption_salt TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS vault_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  item_type TEXT NOT NULL,
+  name TEXT NOT NULL,
+  mime_type TEXT,
+  size_bytes INTEGER DEFAULT 0,
+  encrypted_data BLOB NOT NULL,
+  iv TEXT NOT NULL,
+  auth_tag TEXT NOT NULL,
+  metadata_json TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 `);
 
 // ===============================
@@ -77,8 +102,8 @@ if (!adminExists) {
     console.log("======================================");
     console.log(" ADMINISTRADOR CQ CREADO");
     console.log(" Usuario:", process.env.ADMIN_USER || "CQ");
-    console.log(" ContraseÃ±a temporal:", temporaryPassword);
-    console.log(" GUARDA ESTA CONTRASEÃ‘A.");
+    console.log(" Contraseña temporal:", temporaryPassword);
+    console.log(" GUARDA ESTA CONTRASEÑA.");
     console.log("======================================");
     console.log("");
 }
@@ -93,7 +118,7 @@ app.post("/api/login", (req, res) => {
 
         if (!username || !password || !deviceId) {
             return res.status(400).json({
-                error: "Faltan datos de inicio de sesiÃ³n."
+                error: "Faltan datos de inicio de sesión."
             });
         }
 
@@ -103,13 +128,13 @@ app.post("/api/login", (req, res) => {
 
         if (!user || !bcrypt.compareSync(password, user.password_hash)) {
             return res.status(401).json({
-                error: "Usuario o contraseÃ±a incorrectos."
+                error: "Usuario o contraseña incorrectos."
             });
         }
 
         if (!user.active) {
             return res.status(403).json({
-                error: "Esta cuenta estÃ¡ bloqueada."
+                error: "Esta cuenta está bloqueada."
             });
         }
 
@@ -131,7 +156,7 @@ app.post("/api/login", (req, res) => {
             ).run(deviceId, user.id);
         } else if (user.device_id !== deviceId) {
             return res.status(403).json({
-                error: "Esta licencia ya estÃ¡ vinculada a otro dispositivo."
+                error: "Esta licencia ya está vinculada a otro dispositivo."
             });
         }
 
@@ -162,7 +187,7 @@ app.post("/api/login", (req, res) => {
 });
 
 // ===============================
-// PROTECCIÃ“N DE RUTAS
+// PROTECCIÓN DE RUTAS
 // ===============================
 
 
@@ -239,6 +264,171 @@ app.get("/api/session", auth, (req, res) => {
     }
   });
 });
+
+// ===== BOVEDA PRIVADA POR USUARIO =====
+
+app.get("/api/vault/status", auth, (req, res) => {
+  const vault = db.prepare(`
+    SELECT encryption_salt
+    FROM vault_settings
+    WHERE user_id = ?
+  `).get(req.user.id);
+
+  res.json({
+    configured: !!vault,
+    salt: vault ? vault.encryption_salt : null
+  });
+});
+
+app.post("/api/vault/setup", auth, (req, res) => {
+  const password = String(req.body.password || "");
+
+  if (password.length < 6) {
+    return res.status(400).json({
+      error: "La contrase�a de la b�veda debe tener al menos 6 caracteres."
+    });
+  }
+
+  const existing = db.prepare(`
+    SELECT id
+    FROM vault_settings
+    WHERE user_id = ?
+  `).get(req.user.id);
+
+  if (existing) {
+    return res.status(409).json({
+      error: "Este usuario ya tiene una b�veda configurada."
+    });
+  }
+
+  const passwordHash = bcrypt.hashSync(password, 12);
+  const salt = crypto.randomBytes(32).toString("hex");
+
+  db.prepare(`
+    INSERT INTO vault_settings
+      (user_id, password_hash, encryption_salt)
+    VALUES (?, ?, ?)
+  `).run(req.user.id, passwordHash, salt);
+
+  res.json({
+    success: true,
+    salt
+  });
+});
+
+app.post("/api/vault/unlock", auth, (req, res) => {
+  const password = String(req.body.password || "");
+
+  const vault = db.prepare(`
+    SELECT password_hash, encryption_salt
+    FROM vault_settings
+    WHERE user_id = ?
+  `).get(req.user.id);
+
+  if (!vault) {
+    return res.status(404).json({
+      error: "La b�veda todav�a no est� configurada."
+    });
+  }
+
+  const valid = bcrypt.compareSync(password, vault.password_hash);
+
+  if (!valid) {
+    return res.status(401).json({
+      error: "Contrase�a de b�veda incorrecta."
+    });
+  }
+
+  res.json({
+    success: true,
+    salt: vault.encryption_salt
+  });
+});
+
+// ===== FIN BOVEDA PRIVADA =====
+
+// ===== ITEMS DE BOVEDA PRIVADA =====
+
+app.get("/api/vault/items", auth, (req, res) => {
+  const rows = db.prepare(`
+    SELECT id, item_type, name, mime_type, size_bytes,
+           encrypted_data, iv, auth_tag, metadata_json,
+           created_at, updated_at
+    FROM vault_items
+    WHERE user_id = ?
+    ORDER BY id ASC
+  `).all(req.user.id);
+
+  const items = rows.map(row => ({
+    ...row,
+    encrypted_data: Buffer.isBuffer(row.encrypted_data)
+      ? row.encrypted_data.toString("base64")
+      : row.encrypted_data
+  }));
+
+  res.json(items);
+});
+
+app.post("/api/vault/items", auth, (req, res) => {
+  const {
+    item_type,
+    name,
+    mime_type,
+    size_bytes,
+    encrypted_data,
+    iv,
+    auth_tag,
+    metadata_json
+  } = req.body || {};
+
+  if (!item_type || !name || !encrypted_data || !iv || !auth_tag) {
+    return res.status(400).json({
+      error: "Faltan datos obligatorios del elemento privado."
+    });
+  }
+
+  const encryptedBuffer = Buffer.from(encrypted_data, "base64");
+
+  const result = db.prepare(`
+    INSERT INTO vault_items
+      (user_id, item_type, name, mime_type, size_bytes,
+       encrypted_data, iv, auth_tag, metadata_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    req.user.id,
+    String(item_type),
+    String(name),
+    mime_type ? String(mime_type) : null,
+    Number(size_bytes || 0),
+    encryptedBuffer,
+    String(iv),
+    String(auth_tag),
+    metadata_json ? String(metadata_json) : null
+  );
+
+  res.json({
+    success: true,
+    id: result.lastInsertRowid
+  });
+});
+
+app.delete("/api/vault/items/:id", auth, (req, res) => {
+  const result = db.prepare(`
+    DELETE FROM vault_items
+    WHERE id = ? AND user_id = ?
+  `).run(req.params.id, req.user.id);
+
+  if (result.changes === 0) {
+    return res.status(404).json({
+      error: "Elemento no encontrado."
+    });
+  }
+
+  res.json({ success: true });
+});
+
+// ===== FIN ITEMS DE BOVEDA =====
+
 function adminOnly(req, res, next) {
     if (req.user.role !== "admin") {
         return res.status(403).json({
@@ -259,7 +449,7 @@ app.post("/api/admin/users", auth, adminOnly, (req, res) => {
 
         if (!username || !password || !days) {
             return res.status(400).json({
-                error: "Usuario, contraseÃ±a y dÃ­as son obligatorios."
+                error: "Usuario, contraseña y días son obligatorios."
             });
         }
 
@@ -267,7 +457,7 @@ app.post("/api/admin/users", auth, adminOnly, (req, res) => {
 
         if (!Number.isInteger(licenseDays) || licenseDays < 1) {
             return res.status(400).json({
-                error: "Los dÃ­as de licencia no son vÃ¡lidos."
+                error: "Los días de licencia no son válidos."
             });
         }
 
@@ -320,7 +510,7 @@ app.get("/api/admin/users", auth, adminOnly, (req, res) => {
             active,
             created_at
         FROM users
-        ORDER BY id DESC
+        ORDER BY id ASC
     `).all();
 
     res.json(users);
@@ -365,7 +555,7 @@ app.get("/api/links", auth, (req, res) => {
         SELECT id, name, url, category, icon, created_at
         FROM links
         WHERE user_id = ?
-        ORDER BY id DESC
+        ORDER BY id ASC
     `).all(req.user.id);
 
     res.json(links);
@@ -389,7 +579,7 @@ app.post("/api/links", auth, (req, res) => {
         name,
         url,
         category || "General",
-        icon || "ðŸ”—"
+        icon || "🔗"
     );
 
     res.json({
@@ -398,6 +588,36 @@ app.post("/api/links", auth, (req, res) => {
     });
 });
 
+
+// SINCRONIZAR TODOS LOS ENLACES DEL USUARIO
+app.put("/api/links/sync", auth, (req, res) => {
+  const links = Array.isArray(req.body.links) ? req.body.links : [];
+
+  const syncLinks = db.transaction((items) => {
+    db.prepare("DELETE FROM links WHERE user_id = ?").run(req.user.id);
+
+    const insert = db.prepare(`
+      INSERT INTO links (user_id, name, url, category, icon)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+
+    for (const item of items) {
+      if (!item || !item.name || !item.url) continue;
+
+      insert.run(
+        req.user.id,
+        String(item.name),
+        String(item.url),
+        String(item.category || "General"),
+        String(item.icon || "")
+      );
+    }
+  });
+
+  syncLinks(links);
+
+  res.json({ success: true });
+});
 app.delete("/api/links/:id", auth, (req, res) => {
     db.prepare(`
         DELETE FROM links
@@ -439,12 +659,12 @@ app.patch('/api/admin/users/:id/username', auth, adminOnly, (req, res) => {
   }
 })
 
-// Cambiar contraseña
+// Cambiar contrase�a
 app.patch('/api/admin/users/:id/password', auth, adminOnly, (req, res) => {
   const password = String(req.body.password || '')
 
   if (password.length < 4) {
-    return res.status(400).json({ error: 'La contraseña es demasiado corta.' })
+    return res.status(400).json({ error: 'La contrase�a es demasiado corta.' })
   }
 
   const user = db.prepare(
@@ -515,6 +735,9 @@ app.listen(PORT, () => {
     console.log(`CQ PANEL funcionando en http://localhost:${PORT}`);
     console.log("");
 });
+
+
+
 
 
 
