@@ -834,20 +834,94 @@ function openVaultScreen() {
           const dataUrl = await decryptVaultData(item.encrypted_data, item.iv, item.auth_tag)
 
           rendered.push(`
-            <div style="padding:12px;margin-top:10px;border:1px solid #354067;border-radius:14px">
-              <img src="${dataUrl}" style="width:100%;max-height:380px;object-fit:contain;border-radius:12px">
-              <div style="margin-top:8px">${escapeHtml(item.name || "Foto")}</div>
-              <button class="cq-tool-btn cqDeletePrivatePhoto" data-id="${item.id}" style="margin-top:8px">Eliminar</button>
-            </div>
-          `)
+  <div style="position:relative;aspect-ratio:1/1;overflow:hidden;border-radius:16px;background:#090d20">
+    <img
+      src="${dataUrl}"
+      class="cq-private-photo-img"
+      data-name="${escapeHtml(item.name || "Foto")}"
+      style="width:100%;height:100%;object-fit:cover;display:block;cursor:pointer"
+    >
+    <button
+      class="cq-tool-btn cqDeletePrivatePhoto"
+      data-id="${item.id}"
+      style="position:absolute;right:8px;bottom:8px;padding:7px 10px;background:rgba(0,0,0,.72);font-size:12px"
+    >Eliminar</button>
+  </div>
+`)
         } catch {
           rendered.push("<div>No se pudo abrir una foto.</div>")
         }
       }
 
-      list.innerHTML = rendered.length ? rendered.join("") : "No tienes fotos privadas."
+      list.style.display = "grid"
+list.style.gridTemplateColumns = "repeat(2, minmax(0, 1fr))"
+list.style.gap = "10px"
+list.style.marginTop = "14px"
 
-      document.querySelectorAll<HTMLButtonElement>(".cqDeletePrivatePhoto").forEach(btn => {
+list.innerHTML = rendered.length ? rendered.join("") : `
+  <div style="grid-column:1/-1;opacity:.65;padding:18px 0">
+    No tienes fotos privadas.
+  </div>
+`
+
+      document.querySelectorAll<HTMLImageElement>(".cq-private-photo-img").forEach(img => {
+  img.onclick = () => {
+    const viewer = document.createElement("div")
+
+    viewer.style.cssText = `
+      position:fixed;
+      inset:0;
+      z-index:99999;
+      background:rgba(0,0,0,.97);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:16px;
+    `
+
+    viewer.innerHTML = `
+      <button
+        class="cqPhotoViewerClose"
+        style="
+          position:absolute;
+          top:18px;
+          right:18px;
+          width:44px;
+          height:44px;
+          border:0;
+          border-radius:50%;
+          background:rgba(255,255,255,.16);
+          color:#fff;
+          font-size:28px;
+          cursor:pointer;
+          z-index:2;
+        "
+      >×</button>
+
+      <img
+        src="${img.src}"
+        alt="${img.dataset.name || "Foto"}"
+        style="
+          max-width:100%;
+          max-height:94vh;
+          width:auto;
+          height:auto;
+          object-fit:contain;
+          display:block;
+        "
+      >
+    `
+
+    viewer.querySelector<HTMLButtonElement>(".cqPhotoViewerClose")!.onclick = () => viewer.remove()
+
+    viewer.onclick = e => {
+      if (e.target === viewer) viewer.remove()
+    }
+
+    document.body.appendChild(viewer)
+  }
+})
+document.querySelectorAll<HTMLButtonElement>(".cqDeletePrivatePhoto").forEach(btn => {
         btn.onclick = async () => {
           if (!confirm("Eliminar esta foto privada?")) return
           await vaultFetch(`/api/vault/items/${btn.dataset.id}`, { method: "DELETE" })
