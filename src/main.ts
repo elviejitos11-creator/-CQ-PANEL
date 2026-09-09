@@ -72,6 +72,30 @@ if (cqUser.role !== 'admin' && !localStorage.getItem(linksKey)) {
 const privateLinks = JSON.parse(localStorage.getItem(linksKey) || '[]')
 links.splice(0, links.length, ...privateLinks)
 
+// ENLACES FIJOS DEL ADMIN
+if (cqUser?.role === "admin") {
+  const fixedLinks = [
+    { id: Date.now()+101, name: "GitHub", url: "https://github.com/", category: "Proyectos", icon: "GH" },
+    { id: Date.now()+102, name: "Railway", url: "https://railway.com/", category: "Proyectos", icon: "RW" },
+    { id: Date.now()+103, name: "Render", url: "https://render.com/", category: "Proyectos", icon: "RD" },
+    { id: Date.now()+104, name: "Scamalytics", url: "https://scamalytics.com/", category: "Herramientas", icon: "SC" },
+    { id: Date.now()+105, name: "ListCrawler North Jersey", url: "https://escortalligator.com.listcrawler.eu/brief/escorts/usa/newjersey/northjersey/1", category: "Accesos", icon: "LC" },
+    { id: Date.now()+106, name: "MegaPersonals", url: "https://megapersonals.eu/", category: "Accesos", icon: "MP" }
+  ]
+
+  for (const fixed of fixedLinks) {
+    const fixedUrl = fixed.url.replace(/\/+$/, "").toLowerCase()
+
+    const exists = links.some(link =>
+      String(link.url || "").replace(/\/+$/, "").toLowerCase() === fixedUrl
+    )
+
+    if (!exists) links.push(fixed)
+  }
+
+  saveLinks()
+}
+
 function saveLinks() {
   localStorage.setItem(linksKey, JSON.stringify(links))
 }
